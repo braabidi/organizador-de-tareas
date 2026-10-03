@@ -46,6 +46,12 @@ h3{margin:20px 0 8px;font-size:12px;letter-spacing:1px;color:var(--soft)}
 .btns button{flex:1;padding:14px;border-radius:12px;border:1px solid var(--bd);background:transparent;font-weight:700}
 .btns .pr{background:var(--ac);border-color:var(--ac);color:#fff}
 .del{display:block;margin:16px auto 0;border:0;background:none;color:#dc2626;font-weight:700}
+.acct{border:1px solid var(--bd);background:var(--card);border-radius:20px;padding:7px 12px;font-size:13px;font-weight:600;white-space:nowrap}
+.sheet textarea{width:100%;padding:12px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;font-size:16px;resize:vertical}
+.note{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;margin-bottom:8px;white-space:pre-wrap;word-break:break-word}
+.note small{display:block;margin-top:4px;color:var(--soft);font-size:12px}
+.note small button{border:0;background:none;color:#dc2626;font-weight:700;padding:0;font-size:12px}
+.addn{margin-top:8px;border:1px solid var(--bd);background:var(--card);padding:8px 14px;border-radius:12px;font-weight:600}
 </style>
 </head>
 <body>
@@ -59,6 +65,47 @@ const FR={manana:'Mañana',tarde:'Tarde',noche:'Noche'};
 let T=[],off=0,tab='semana',filt='todas',sel=null,ed=null;
 try{T=JSON.parse(localStorage.getItem(K)||'[]')}catch(e){}
 const save=()=>{try{localStorage.setItem(K,JSON.stringify(T))}catch(e){}};
+const cre=t=>t.cre||parseInt(String(t.id).slice(0,8),36)||0,sortT=()=>T.sort((a,b)=>cre(b)-cre(a));
+const clean=t=>{const o=JSON.parse(JSON.stringify(t));delete o._draft;return o};
+const fdate=ts=>{const d=new Date(ts);return d.getDate()+' '+MES[d.getMonth()]+' '+p2(d.getHours())+':'+p2(d.getMinutes())};
+// ---- Sincronización con Firebase ----
+const FB='https://www.gstatic.com/firebasejs/10.12.2/',SK='organizador:sync';
+const CFG={apiKey:"AIzaSyB95xtyirWVK8bP6JTjBmSSiq4UHevzIpk",authDomain:"organizador-de-tareas-2a4ff.firebaseapp.com",projectId:"organizador-de-tareas-2a4ff",storageBucket:"organizador-de-tareas-2a4ff.firebasestorage.app",messagingSenderId:"364841852380",appId:"1:364841852380:web:8e5309f884d9160bb14319"};
+let fb=null,user=null,unsub=null;
+const tdoc=id=>fb.F.doc(fb.db,'users',user.uid,'tasks',id);
+function put(t){t.upd=Date.now();const i=T.findIndex(x=>x.id==t.id);if(i<0)T.unshift(t);else T[i]=t;save();render();
+  if(user&&fb)fb.F.setDoc(tdoc(t.id),clean(t)).catch(e=>console.warn(e))}
+function rm(id){T=T.filter(x=>x.id!=id);save();render();if(user&&fb)fb.F.deleteDoc(tdoc(id)).catch(e=>console.warn(e))}
+function listen(u){
+  const {F,db}=fb,col=F.collection(db,'users',u.uid,'tasks');
+  let merged=false;try{merged=localStorage.getItem(SK)==u.uid}catch(e){}
+  unsub=F.onSnapshot(col,{includeMetadataChanges:true},s=>{
+    if(!merged){
+      if(s.metadata.fromCache)return;
+      // Primera vez en este dispositivo: juntar tareas locales y de la nube
+      const m={};s.forEach(d=>m[d.id]={...d.data(),id:d.id});
+      T.forEach(t=>{const c=m[t.id];if(!c||(t.upd||0)>(c.upd||0)){m[t.id]=t;F.setDoc(F.doc(col,t.id),clean(t)).catch(e=>console.warn(e))}});
+      T=Object.values(m);merged=true;try{localStorage.setItem(SK,u.uid)}catch(e){}
+    }else T=s.docs.map(d=>({...d.data(),id:d.id}));
+    sortT();save();render();
+  },e=>console.warn(e));
+}
+async function login(){
+  const {U,auth}=fb,p=new U.GoogleAuthProvider();
+  try{await U.signInWithPopup(auth,p)}catch(e){
+    if(e.code=='auth/popup-blocked'||e.code=='auth/operation-not-supported-in-this-environment')U.signInWithRedirect(auth,p);
+    else if(e.code!='auth/popup-closed-by-user'&&e.code!='auth/cancelled-popup-request')alert('No se pudo iniciar sesión ('+e.code+')');
+  }
+}
+(async()=>{try{
+  const [A,U,F]=await Promise.all(['app','auth','firestore'].map(m=>import(FB+'firebase-'+m+'.js')));
+  const app=A.initializeApp(CFG),auth=U.getAuth(app);let db;
+  try{db=F.initializeFirestore(app,{localCache:F.persistentLocalCache({tabManager:F.persistentMultipleTabManager()})})}catch(e){db=F.getFirestore(app)}
+  fb={U,F,auth,db};U.getRedirectResult(auth).catch(()=>{});
+  U.onAuthStateChanged(auth,u=>{if(unsub){unsub();unsub=null}user=u;
+    if(u)listen(u);else{try{localStorage.removeItem(SK)}catch(e){}}render()});
+  render();
+}catch(e){console.warn('Sincronización no disponible',e)}})();
 const p2=n=>String(n).padStart(2,'0'),iso=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
 const add=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
 const mon=o=>{const h=new Date();h.setHours(12,0,0,0);return add(h,-((h.getDay()+6)%7)+o*7)};
@@ -66,7 +113,7 @@ const days=()=>Array.from({length:7},(_,i)=>add(mon(off),i));
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const chip=(l,on,a,v,c)=>`<button class="chip${on?' on':''}" data-a="${a}" data-v="${v}"${c?` style="--c:${c}"`:''}>${l}</button>`;
 function pickSel(){const i=days().map(iso),h=iso(new Date());sel=i.includes(h)?h:i[0]}
-const item=t=>`<div class="t" data-id="${t.id}"><button class="ck${t.done?' on':''}" style="--c:${CAT[t.cat][1]}" data-a="tg">${t.done?'✓':''}</button><div class="tb" data-a="ed"><b class="${t.done?'dn':''}">${esc(t.title)}</b><small><i style="color:${CAT[t.cat][1]}">${CAT[t.cat][0]}</i><i style="color:${PRI[t.pri][1]}">● ${PRI[t.pri][0]}</i>${tab=='tareas'?(t.day?t.day.slice(8)+'/'+t.day.slice(5,7):'Sin día'):''}</small></div></div>`;
+const item=t=>`<div class="t" data-id="${t.id}"><button class="ck${t.done?' on':''}" style="--c:${CAT[t.cat][1]}" data-a="tg">${t.done?'✓':''}</button><div class="tb" data-a="ed"><b class="${t.done?'dn':''}">${esc(t.title)}</b><small><i style="color:${CAT[t.cat][1]}">${CAT[t.cat][0]}</i><i style="color:${PRI[t.pri][1]}">● ${PRI[t.pri][0]}</i>${t.notes&&t.notes.length?`<i style="color:var(--soft)">📝 ${t.notes.length}</i>`:''}${tab=='tareas'?(t.day?t.day.slice(8)+'/'+t.day.slice(5,7):'Sin día'):''}</small></div></div>`;
 function render(){
   let v='';
   if(tab=='semana'){
@@ -82,7 +129,7 @@ function render(){
     v+=`<div class="chips" style="margin-bottom:14px">${chip('Todas',filt=='todas','filt','todas')}${Object.keys(CAT).map(c=>chip(CAT[c][0],filt==c,'filt',c,CAT[c][1])).join('')}</div>`;
     v+=l.length?l.map(item).join(''):'<div class="empty" style="text-align:center;margin-top:40px">Aún no hay tareas. Toca ＋ para crear la primera.</div>';
   }
-  document.getElementById('app').innerHTML=`<h1>Mi organizador</h1><div class="chips" style="margin-bottom:16px">${chip('Semana',tab=='semana','tab','semana')}${chip('Todas las tareas',tab=='tareas','tab','tareas')}</div>${v}<button class="fab" data-a="new">＋</button>`;
+  document.getElementById('app').innerHTML=`<div class="row"><h1>Mi organizador</h1>${fb?`<button class="acct" data-a="acct">${user?'☁ '+esc((user.displayName||'Cuenta').split(' ')[0]):'Iniciar sesión'}</button>`:''}</div><div class="chips" style="margin-bottom:16px">${chip('Semana',tab=='semana','tab','semana')}${chip('Todas las tareas',tab=='tareas','tab','tareas')}</div>${v}<button class="fab" data-a="new">＋</button>`;
 }
 function renderModal(){
   const m=document.getElementById('modal');
@@ -95,11 +142,14 @@ function renderModal(){
   <span class="lbl">CATEGORÍA</span><div class="chips">${Object.keys(CAT).map(k=>chip(CAT[k][0],ed.cat==k,'cat',k,CAT[k][1])).join('')}</div>
   <span class="lbl">DÍA</span><div class="chips">${chip('Sin día',!ed.day,'dia','')}${o.map(x=>chip(x[1],ed.day==x[0],'dia',x[0])).join('')}</div>
   ${ed.day?`<span class="lbl">FRANJA</span><div class="chips">${Object.keys(FR).map(k=>chip(FR[k],ed.slot==k,'slot',k)).join('')}</div>`:''}
+  <span class="lbl">NOTAS</span>${(ed.notes||[]).map((n,i)=>`<div class="note">${esc(n.text)}<small>${fdate(n.at)} · <button data-a="ndel" data-v="${i}">Borrar</button></small></div>`).join('')}
+  <textarea id="ni" rows="2" placeholder="Escribe una nota…">${esc(ed._draft||'')}</textarea>
+  <button class="addn" data-a="nadd">＋ Añadir nota</button>
   <div class="btns"><button data-a="close">Cancelar</button><button class="pr" data-a="save">Guardar</button></div>
   ${ed.id?'<button class="del" data-a="del">Borrar tarea</button>':''}`;
   m.classList.add('open');
 }
-document.addEventListener('input',e=>{if(e.target.id=='ti'&&ed)ed.title=e.target.value});
+document.addEventListener('input',e=>{if(!ed)return;if(e.target.id=='ti')ed.title=e.target.value;if(e.target.id=='ni')ed._draft=e.target.value});
 document.addEventListener('click',e=>{
   if(e.target.id=='modal'){ed=null;renderModal();return}
   const el=e.target.closest('[data-a]');if(!el)return;
@@ -109,8 +159,11 @@ document.addEventListener('click',e=>{
   else if(a=='prev'||a=='next'){off+=a=='next'?1:-1;pickSel();render()}
   else if(a=='today'){off=0;pickSel();render()}
   else if(a=='day'){sel=v;render()}
-  else if(a=='tg'){const t=T.find(x=>x.id==id);t.done=!t.done;save();render()}
-  else if(a=='ed'){ed={...T.find(x=>x.id==id)};renderModal()}
+  else if(a=='acct'){if(!user)login();else if(confirm('¿Cerrar sesión de '+(user.email||'tu cuenta')+'? Las tareas seguirán en este dispositivo.'))fb.U.signOut(fb.auth)}
+  else if(a=='tg'){const t=T.find(x=>x.id==id);put({...t,done:!t.done})}
+  else if(a=='ed'){const t=T.find(x=>x.id==id);ed={...t,notes:[...(t.notes||[])]};renderModal()}
+  else if(a=='nadd'){const x=(ed._draft||'').trim();if(!x){document.getElementById('ni').focus();return}ed.notes=[...(ed.notes||[]),{text:x,at:Date.now()}];ed._draft='';renderModal()}
+  else if(a=='ndel'){ed.notes.splice(+v,1);renderModal()}
   else if(a=='new'){ed={title:'',pri:'media',cat:'trabajo',day:tab=='semana'?sel:null,slot:'manana'};renderModal()}
   else if(a=='pri'||a=='cat'||a=='slot'){ed[a]=v;renderModal()}
   else if(a=='dia'){ed.day=v||null;renderModal()}
@@ -118,10 +171,11 @@ document.addEventListener('click',e=>{
   else if(a=='save'){
     if(!ed.title.trim()){document.getElementById('ti').focus();return}
     ed.title=ed.title.trim();
-    if(ed.id)T=T.map(x=>x.id==ed.id?{...x,...ed}:x);else T.unshift({...ed,id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),done:false});
-    save();ed=null;renderModal();render();
+    const x=(ed._draft||'').trim();if(x)ed.notes=[...(ed.notes||[]),{text:x,at:Date.now()}];
+    const t=clean(ed);if(!t.id){t.id=Date.now().toString(36)+Math.random().toString(36).slice(2,6);t.done=false;t.cre=Date.now()}
+    ed=null;renderModal();put(t);
   }
-  else if(a=='del'){if(confirm('¿Borrar esta tarea?')){T=T.filter(x=>x.id!=ed.id);save();ed=null;renderModal();render()}}
+  else if(a=='del'){if(confirm('¿Borrar esta tarea?')){const i=ed.id;ed=null;renderModal();rm(i)}}
 });
 // Icono para la pantalla de inicio (generado en el propio navegador)
 try{
@@ -133,7 +187,7 @@ try{
   const mf=new Blob([JSON.stringify({name:'Mi organizador',short_name:'Organizador',start_url:location.href,display:'standalone',background_color:'#4f46e5',theme_color:'#4f46e5',icons:[{src:u,sizes:'180x180',type:'image/png'}]})],{type:'application/manifest+json'});
   const l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(mf);document.head.appendChild(l);
 }catch(e){}
-pickSel();render();
+sortT();pickSel();render();
 </script>
 </body>
 </html>
