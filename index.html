@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi organizador</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Organizador">
+<meta name="theme-color" content="#4f46e5">
+<style>
+:root{--bg:#f8fafc;--card:#fff;--tx:#0f172a;--soft:#64748b;--bd:#e2e8f0;--ac:#4f46e5;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--soft:#94a3b8;--bd:#334155;--ac:#6366f1}}
+:root[data-theme="dark"]{--bg:#0f172a;--card:#1e293b;--tx:#f1f5f9;--soft:#94a3b8;--bd:#334155;--ac:#6366f1}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#app{max-width:640px;margin:0 auto;padding:16px 16px 110px}
+h1{margin:4px 0 10px;font-size:26px}
+button{font:inherit;color:inherit;cursor:pointer}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--bd);background:transparent;padding:7px 14px;border-radius:20px;font-size:14px;font-weight:600}
+.chip.on{background:var(--c,var(--ac));border-color:var(--c,var(--ac));color:#fff}
+.nav{width:40px;height:40px;border-radius:50%;border:1px solid var(--bd);background:var(--card);font-size:20px}
+.bar{height:8px;background:var(--bd);border-radius:4px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;background:var(--ac)}
+.days{display:flex;gap:8px;overflow-x:auto;margin:16px -16px 0;padding:0 16px 4px}
+.day{flex:0 0 62px;padding:10px 0;border-radius:14px;border:1.5px solid var(--bd);background:var(--card);text-align:center}
+.day.today{border-color:var(--ac)}.day.on{background:var(--ac);color:#fff}
+.day b{display:block;font-size:20px}.day small{font-size:11px;opacity:.75}
+h3{margin:20px 0 8px;font-size:12px;letter-spacing:1px;color:var(--soft)}
+.empty{color:var(--soft);font-size:13px;font-style:italic}
+.t{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px;margin-bottom:8px}
+.ck{flex:0 0 26px;height:26px;border-radius:50%;border:2px solid var(--c);background:transparent;color:#fff;font-weight:800;padding:0}
+.ck.on{background:var(--c)}
+.tb{flex:1;min-width:0}.tb b{display:block;font-weight:600;word-break:break-word}.tb b.dn{text-decoration:line-through;opacity:.5}
+.tb small{font-size:12px;font-weight:700}.tb small i{font-style:normal;margin-right:8px}
+.fab{position:fixed;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:60px;height:60px;border-radius:50%;border:0;background:var(--ac);color:#fff;font-size:32px;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;justify-content:center;z-index:9}
+#modal.open{display:flex}
+.sheet{background:var(--bg);width:100%;max-width:640px;max-height:92%;overflow-y:auto;border-radius:24px 24px 0 0;padding:20px 20px calc(28px + env(safe-area-inset-bottom,0px))}
+.sheet input{width:100%;padding:12px;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font-size:16px}
+.lbl{display:block;margin:16px 0 8px;font-size:12px;font-weight:800;letter-spacing:1px;color:var(--soft)}
+.btns{display:flex;gap:10px;margin-top:22px}
+.btns button{flex:1;padding:14px;border-radius:12px;border:1px solid var(--bd);background:transparent;font-weight:700}
+.btns .pr{background:var(--ac);border-color:var(--ac);color:#fff}
+.del{display:block;margin:16px auto 0;border:0;background:none;color:#dc2626;font-weight:700}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"><div class="sheet" id="sheet"></div></div>
+<script>
+const K='organizador:v1',DIAS=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'],MES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const PRI={alta:['Alta','#dc2626'],media:['Media','#d97706'],baja:['Baja','#16a34a']};
+const CAT={trabajo:['Trabajo','#2563eb'],estudio:['Estudio','#7c3aed'],casa:['Casa','#0d9488'],personal:['Personal','#db2777']};
+const FR={manana:'Mañana',tarde:'Tarde',noche:'Noche'};
+let T=[],off=0,tab='semana',filt='todas',sel=null,ed=null;
+try{T=JSON.parse(localStorage.getItem(K)||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(T))}catch(e){}};
+const p2=n=>String(n).padStart(2,'0'),iso=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+const add=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const mon=o=>{const h=new Date();h.setHours(12,0,0,0);return add(h,-((h.getDay()+6)%7)+o*7)};
+const days=()=>Array.from({length:7},(_,i)=>add(mon(off),i));
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const chip=(l,on,a,v,c)=>`<button class="chip${on?' on':''}" data-a="${a}" data-v="${v}"${c?` style="--c:${c}"`:''}>${l}</button>`;
+function pickSel(){const i=days().map(iso),h=iso(new Date());sel=i.includes(h)?h:i[0]}
+const item=t=>`<div class="t" data-id="${t.id}"><button class="ck${t.done?' on':''}" style="--c:${CAT[t.cat][1]}" data-a="tg">${t.done?'✓':''}</button><div class="tb" data-a="ed"><b class="${t.done?'dn':''}">${esc(t.title)}</b><small><i style="color:${CAT[t.cat][1]}">${CAT[t.cat][0]}</i><i style="color:${PRI[t.pri][1]}">● ${PRI[t.pri][0]}</i>${tab=='tareas'?(t.day?t.day.slice(8)+'/'+t.day.slice(5,7):'Sin día'):''}</small></div></div>`;
+function render(){
+  let v='';
+  if(tab=='semana'){
+    const d=days(),ids=d.map(iso),ws=T.filter(t=>t.day&&ids.includes(t.day)),dn=ws.filter(t=>t.done).length,pc=ws.length?Math.round(dn/ws.length*100):0,hoy=iso(new Date());
+    v+=`<div class="row"><button class="nav" data-a="prev">‹</button><div style="text-align:center" data-a="today"><b>${d[0].getDate()} ${MES[d[0].getMonth()]} – ${d[6].getDate()} ${MES[d[6].getMonth()]}</b><br><small style="color:var(--soft)">${off==0?'Esta semana':'Toca para volver a hoy'}</small></div><button class="nav" data-a="next">›</button></div>`;
+    v+=`<div style="margin-top:14px"><div class="row"><small style="color:var(--soft)">Progreso semanal</small><small><b>${dn}/${ws.length} · ${pc}%</b></small></div><div class="bar"><i style="width:${pc}%"></i></div></div>`;
+    v+=`<div class="days">${d.map((x,i)=>{const s=iso(x),n=T.filter(t=>t.day==s&&!t.done).length;return `<button class="day${s==sel?' on':''}${s==hoy?' today':''}" data-a="day" data-v="${s}"><small>${DIAS[i]}</small><b>${x.getDate()}</b><small>${n?n+' pend.':'—'}</small></button>`}).join('')}</div>`;
+    for(const f in FR){const l=T.filter(t=>t.day==sel&&(t.slot||'manana')==f);v+=`<h3>${FR[f].toUpperCase()}</h3>${l.length?l.map(item).join(''):'<div class="empty">Sin tareas</div>'}`}
+    const b=T.filter(t=>!t.day&&!t.done);
+    v+=`<h3>BANDEJA · SIN DÍA (${b.length})</h3>${b.length?b.map(item).join(''):'<div class="empty">Nada pendiente de planificar</div>'}`;
+  }else{
+    const l=T.filter(t=>filt=='todas'||t.cat==filt).sort((a,b)=>a.done-b.done);
+    v+=`<div class="chips" style="margin-bottom:14px">${chip('Todas',filt=='todas','filt','todas')}${Object.keys(CAT).map(c=>chip(CAT[c][0],filt==c,'filt',c,CAT[c][1])).join('')}</div>`;
+    v+=l.length?l.map(item).join(''):'<div class="empty" style="text-align:center;margin-top:40px">Aún no hay tareas. Toca ＋ para crear la primera.</div>';
+  }
+  document.getElementById('app').innerHTML=`<h1>Mi organizador</h1><div class="chips" style="margin-bottom:16px">${chip('Semana',tab=='semana','tab','semana')}${chip('Todas las tareas',tab=='tareas','tab','tareas')}</div>${v}<button class="fab" data-a="new">＋</button>`;
+}
+function renderModal(){
+  const m=document.getElementById('modal');
+  if(!ed){m.classList.remove('open');return}
+  const o=days().map((x,i)=>[iso(x),DIAS[i]+' '+x.getDate()]);
+  if(ed.day&&!o.some(x=>x[0]==ed.day))o.push([ed.day,ed.day.slice(8)+'/'+ed.day.slice(5,7)]);
+  document.getElementById('sheet').innerHTML=`<h2 style="margin:0 0 12px">${ed.id?'Editar tarea':'Nueva tarea'}</h2>
+  <input id="ti" value="${esc(ed.title)}" placeholder="¿Qué tienes que hacer?" maxlength="120">
+  <span class="lbl">PRIORIDAD</span><div class="chips">${Object.keys(PRI).map(k=>chip(PRI[k][0],ed.pri==k,'pri',k,PRI[k][1])).join('')}</div>
+  <span class="lbl">CATEGORÍA</span><div class="chips">${Object.keys(CAT).map(k=>chip(CAT[k][0],ed.cat==k,'cat',k,CAT[k][1])).join('')}</div>
+  <span class="lbl">DÍA</span><div class="chips">${chip('Sin día',!ed.day,'dia','')}${o.map(x=>chip(x[1],ed.day==x[0],'dia',x[0])).join('')}</div>
+  ${ed.day?`<span class="lbl">FRANJA</span><div class="chips">${Object.keys(FR).map(k=>chip(FR[k],ed.slot==k,'slot',k)).join('')}</div>`:''}
+  <div class="btns"><button data-a="close">Cancelar</button><button class="pr" data-a="save">Guardar</button></div>
+  ${ed.id?'<button class="del" data-a="del">Borrar tarea</button>':''}`;
+  m.classList.add('open');
+}
+document.addEventListener('input',e=>{if(e.target.id=='ti'&&ed)ed.title=e.target.value});
+document.addEventListener('click',e=>{
+  if(e.target.id=='modal'){ed=null;renderModal();return}
+  const el=e.target.closest('[data-a]');if(!el)return;
+  const a=el.dataset.a,v=el.dataset.v,row=el.closest('[data-id]'),id=row&&row.dataset.id;
+  if(a=='tab'){tab=v;render()}
+  else if(a=='filt'){filt=v;render()}
+  else if(a=='prev'||a=='next'){off+=a=='next'?1:-1;pickSel();render()}
+  else if(a=='today'){off=0;pickSel();render()}
+  else if(a=='day'){sel=v;render()}
+  else if(a=='tg'){const t=T.find(x=>x.id==id);t.done=!t.done;save();render()}
+  else if(a=='ed'){ed={...T.find(x=>x.id==id)};renderModal()}
+  else if(a=='new'){ed={title:'',pri:'media',cat:'trabajo',day:tab=='semana'?sel:null,slot:'manana'};renderModal()}
+  else if(a=='pri'||a=='cat'||a=='slot'){ed[a]=v;renderModal()}
+  else if(a=='dia'){ed.day=v||null;renderModal()}
+  else if(a=='close'){ed=null;renderModal()}
+  else if(a=='save'){
+    if(!ed.title.trim()){document.getElementById('ti').focus();return}
+    ed.title=ed.title.trim();
+    if(ed.id)T=T.map(x=>x.id==ed.id?{...x,...ed}:x);else T.unshift({...ed,id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),done:false});
+    save();ed=null;renderModal();render();
+  }
+  else if(a=='del'){if(confirm('¿Borrar esta tarea?')){T=T.filter(x=>x.id!=ed.id);save();ed=null;renderModal();render()}}
+});
+// Icono para la pantalla de inicio (generado en el propio navegador)
+try{
+  const c=document.createElement('canvas');c.width=c.height=180;const x=c.getContext('2d');
+  x.fillStyle='#4f46e5';x.fillRect(0,0,180,180);x.strokeStyle='#fff';x.lineWidth=16;x.lineCap=x.lineJoin='round';
+  x.beginPath();x.moveTo(50,95);x.lineTo(80,124);x.lineTo(134,58);x.stroke();
+  const u=c.toDataURL('image/png');
+  ['apple-touch-icon','icon'].forEach(r=>{const l=document.createElement('link');l.rel=r;l.href=u;document.head.appendChild(l)});
+  const mf=new Blob([JSON.stringify({name:'Mi organizador',short_name:'Organizador',start_url:location.href,display:'standalone',background_color:'#4f46e5',theme_color:'#4f46e5',icons:[{src:u,sizes:'180x180',type:'image/png'}]})],{type:'application/manifest+json'});
+  const l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(mf);document.head.appendChild(l);
+}catch(e){}
+pickSel();render();
+</script>
+</body>
+</html>
